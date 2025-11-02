@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use eframe::egui;
 use catppuccin_egui::{set_theme, MOCHA, LATTE};
+use std::time::Duration;
 
 pub struct AudioPlayerApp {
     playlist: Option<crate::playlist::Playlist>,  // Instead of audio_files + current_index + durations
@@ -77,6 +78,29 @@ impl eframe::App for AudioPlayerApp {
             if let Some(playlist) = &self.playlist {
                 if let Some(audio_file) = playlist.current() {
                     ui.label(format!("Now: {}", audio_file.title));
+                    if let Some(player) = &self.player {
+                        let current_pos = player.get_position();
+                        let total_duration = audio_file.duration.unwrap_or(Duration::ZERO);
+    
+                        let mut progress = if total_duration.as_secs() > 0 {
+                            current_pos.as_secs_f64() / total_duration.as_secs_f64()
+                        } else {
+                            0.0
+                        };
+                        progress = progress.min(1.0);
+                        // Display slider (read-only for now)
+                        ui.add(
+                            egui::Slider::new(&mut progress, 0.0..=1.0)
+                                .show_value(false)  // Don't show the 0.0-1.0 number
+                        );
+                        
+                        // Show time below slider: "1:23 / 3:45"
+                        ui.label(format!(
+                            "{} / {}", 
+                            format_duration(current_pos),
+                            format_duration(total_duration)
+                        ));
+                    }
                 }
 
                 
@@ -111,7 +135,7 @@ impl AudioPlayerApp {
                     }
                 }
             }
-        }else if let Some(player) = &self.player {
+        } else if let Some(player) = &mut self.player {
             if self.is_playing{
                 player.pause();
                 self.is_playing = false;
@@ -134,4 +158,11 @@ impl AudioPlayerApp {
             }
         }
     }
+}
+
+fn format_duration(duration: Duration) -> String {
+    let total_secs = duration.as_secs();
+    let minutes = total_secs / 60;
+    let seconds = total_secs % 60;
+    format!("{}:{:02}", minutes, seconds)
 }

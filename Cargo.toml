@@ -9,3 +9,4 @@ walkdir = "2.5"
 eframe = "0.32"
 egui = "0.32"
 catppuccin-egui = { version = "5.6.0", default-features = false, features = ["egui32"] }
+symphonia = { version = "0.5", features = ["mp3", "wav"] }
