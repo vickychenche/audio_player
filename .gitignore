@@ -1,0 +1,20 @@
+# Rust build artifacts
+/target
+
+# Audio files
+tmp/audio/*.mp3
+tmp/audio/*.wav
+tmp/audio/*.ogg
+tmp/audio/*.flac
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+
+# Cargo lock for libraries (keep for binaries)
+# Cargo.lock
