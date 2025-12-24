@@ -21,9 +21,30 @@ impl Playlist {
             if next_idx < self.files.len() {
                 self.current_index = Some(next_idx);
                 return self.files.get(next_idx);
+            } else {
+                self.current_index = Some(0);
+                return self.first();
             }
         }
         None
+    }
+    
+    pub fn previous(&mut self) -> Option<&AudioFile> {
+        if let Some(idx) = self.current_index {
+            if idx > 0 {
+                let prev_idx = idx - 1;
+                self.current_index = Some(prev_idx);
+                return self.files.get(prev_idx);
+            } else {
+                self.current_index = Some(0);
+                return self.first();
+            }
+        }
+        None
+    }
+
+    pub fn first(&self) -> Option<&AudioFile> {
+        self.files.first()
     }
 
     pub fn all_files(&self) -> &[AudioFile] {

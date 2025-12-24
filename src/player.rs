@@ -27,6 +27,8 @@ impl Player {
     }
 
     pub fn play(&mut self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        self.sink.stop();
+        
         let file = File::open(path)?;
         let source = Decoder::new(BufReader::new(file))?;
         self.sink.append(source);
@@ -48,6 +50,13 @@ impl Player {
             let pause_duration = paused_at.elapsed();
             self.pause_offset += pause_duration;
         }
+    }
+
+    pub fn stop(&mut self) {
+        self.sink.stop();
+        self.playback_start = None;
+        self.pause_offset = Duration::ZERO;
+        self.paused_at = None;
     }
 
     pub fn get_position(&self) -> Duration {

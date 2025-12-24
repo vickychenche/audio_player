@@ -10,6 +10,12 @@ pub struct AudioPlayerApp {
     is_dark_theme: bool,
     folder_path: String,
     volume: f32,
+
+    playlist_manager: crate::playlist_manager::PlaylistManager,
+    playlist_names: Vec<String>,
+    selected_playlist: Option<String>,
+    show_create_dialog: bool,
+    new_playlist_name: String,
 }
 
 impl Default for AudioPlayerApp {
@@ -21,11 +27,20 @@ impl Default for AudioPlayerApp {
             is_playing: false,
             player: None,
             is_dark_theme: true,
+            playlist_manager: crate::playlist_manager::PlaylistManager::new(),
+            playlist_names: Vec::new(),
+            selected_playlist: None,
+            show_create_dialog: false,
+            new_playlist_name: String::new(),
         };
+
+        if let Ok(names) = app.playlist_manager.scan_playlists() {
+            app.playlist_names = names;
+        }
+        
         app.load_files();
         app
     }
-    
 }
 
 impl eframe::App for AudioPlayerApp {
@@ -44,21 +59,109 @@ impl eframe::App for AudioPlayerApp {
                 }
             }
         }
+        
+        // NEW: Add sidebar BEFORE CentralPanel
+        egui::SidePanel::left("playlist_sidebar")
+            .resizable(false)
+            .default_width(200.0)
+            .show(ctx, |ui| {
+                ui.heading("Playlists");
+                ui.separator();
+                
+                // "Create Playlist" button
+                if ui.button("➕ Create Playlist").clicked() {
+                    self.show_create_dialog = true;
+                }
+                
+                ui.separator();
+                
+                // List of playlists
+                let mut clicked_playlist = None;
+                for playlist_name in &self.playlist_names {
+                    // Highlight if selected
+                    let is_selected = self.selected_playlist.as_ref() == Some(playlist_name);
+                    
+                    // Create button style
+                    let response = if is_selected {
+                        ui.selectable_label(true, playlist_name)
+                    } else {
+                        ui.selectable_label(false, playlist_name)
+                    };
+                    
+                    // Handle click - store name to process after loop
+                    if response.clicked() {
+                        clicked_playlist = Some(playlist_name.clone());
+                    }
+                }
+                
+                // Process click outside the loop to avoid borrowing issues
+                if let Some(name) = clicked_playlist {
+                    self.selected_playlist = Some(name.clone());
+                    self.load_playlist_songs(&name);
+                }
+            });
+        
+        // Create Playlist Dialog
+        if self.show_create_dialog {
+            egui::Window::new("Create Playlist")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("Playlist Name:");
+                    ui.text_edit_singleline(&mut self.new_playlist_name);
+                    
+                    ui.add_space(10.0);
+                    
+                    // Show error if name is invalid
+                    let name_trimmed = self.new_playlist_name.trim();
+                    let is_valid = !name_trimmed.is_empty() 
+                        && !name_trimmed.chars().any(|c| matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'));
+                    
+                    if !is_valid && !name_trimmed.is_empty() {
+                        ui.label(egui::RichText::new("Invalid characters: / \\ : * ? \" < > |").color(egui::Color32::RED));
+                    }
+                    
+                    // Convert to owned String to avoid borrowing issues
+                    let playlist_name = name_trimmed.to_string();
+                    
+                    ui.horizontal(|ui| {
+                        // Create button
+                        let create_enabled = is_valid;
+                        if ui.add_enabled(create_enabled, egui::Button::new("Create")).clicked() {
+                            if let Err(e) = self.playlist_manager.create_playlist(&playlist_name) {
+                                eprintln!("Error creating playlist: {}", e);
+                            } else {
+                                // Success - refresh playlist list and close dialog
+                                self.refresh_playlists();
+                                self.new_playlist_name.clear();
+                                self.show_create_dialog = false;
+                            }
+                        }
+                        
+                        // Cancel button
+                        if ui.button("Cancel").clicked() {
+                            self.new_playlist_name.clear();
+                            self.show_create_dialog = false;
+                        }
+                    });
+                });
+        }
+        
+        // Existing CentralPanel stays the same
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Lil Glucose Player");
             ui.separator();
             // Folder selection
             ui.horizontal(|ui| {
-                let theme_text = if self.is_dark_theme { "🌙" } else { "☀️" };
+                let theme_text = if self.is_dark_theme { "🌙" } else { "light" };
                 if ui.button(theme_text).clicked() {
                     self.is_dark_theme = !self.is_dark_theme;
                 }
-                ui.label("Folder:");
-                ui.text_edit_singleline(&mut self.folder_path);
-                if ui.button("Load Files").clicked() {
-                    // We'll implement this method next
-                    self.load_files();
-                }
+                // ui.label("Folder:");
+                // ui.text_edit_singleline(&mut self.folder_path);
+                // if ui.button("Load Files").clicked() {
+                //     self.load_files();
+                // }
             });
 
             ui.separator();
@@ -67,13 +170,23 @@ impl eframe::App for AudioPlayerApp {
             ui.label(format!("Found {} files", file_count));
 
             ui.separator(); 
-
+            
             // Play/Pause controls
             ui.horizontal(|ui| {
+                // Previous Button
+                if ui.button("⏮").clicked() {
+                    self.play_previous();
+                }
+                // Play/Pause button
                 if ui.button(if self.is_playing { "⏸" } else { "▶" }).clicked() {
                     self.toggle_play_pause();
                 }
+                // Next Button
+                if ui.button("⏭").clicked() {
+                    self.play_next();
+                }
             });
+            
 
             if let Some(playlist) = &self.playlist {
                 if let Some(audio_file) = playlist.current() {
@@ -102,10 +215,7 @@ impl eframe::App for AudioPlayerApp {
                         ));
                     }
                 }
-
-                
             }
-            
         });
         ctx.request_repaint();
     }
@@ -156,6 +266,31 @@ impl AudioPlayerApp {
                 // Reached end
                 self.is_playing = false;
             }
+        }
+    }
+
+    pub fn play_previous(&mut self) {
+        if let Some(playlist) = &mut self.playlist {
+            if let Some(previous_file) = playlist.previous() {
+                if let Some(player) = &mut self.player {
+                    let _ = player.play(&previous_file.path);
+                }
+            } 
+        }
+    }
+
+    fn refresh_playlists(&mut self) {
+        if let Ok(names) = self.playlist_manager.scan_playlists() {
+            self.playlist_names = names;
+        }
+    }
+
+    // NEW: Load songs from selected playlist
+    fn load_playlist_songs(&mut self, playlist_name: &str) {
+        if let Ok(songs) = self.playlist_manager.get_playlist_songs(playlist_name) {
+            self.playlist = Some(crate::playlist::Playlist::new(songs));
+        } else {
+            eprintln!("Failed to load songs from playlist: {}", playlist_name);
         }
     }
 }

@@ -2,6 +2,7 @@ mod player;
 mod audio;
 mod ui;
 mod playlist;
+mod playlist_manager;
 
 use eframe::egui;
 //use player::Player;
@@ -12,7 +13,7 @@ fn main() -> Result<(), eframe::Error> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([400.0, 300.0]),
+            .with_min_inner_size([300.0, 200.0]),
         ..Default::default()
     };
 
